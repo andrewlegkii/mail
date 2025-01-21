@@ -24,7 +24,11 @@ class DebtNotifierApp:
         self.company_frame = tk.Frame(root)
         self.company_frame.grid(row=3, column=0, columnspan=3, pady=10)
 
-        tk.Button(root, text="Send Emails", command=self.send_emails).grid(row=4, column=0, columnspan=3, pady=10)
+        tk.Label(root, text="Choose Email Account:").grid(row=4, column=0, padx=10, pady=5, sticky="w")
+        self.account_entry = tk.Entry(root, width=50)
+        self.account_entry.grid(row=4, column=1, padx=10, pady=5, sticky="w")
+
+        tk.Button(root, text="Send Emails", command=self.send_emails).grid(row=5, column=0, columnspan=3, pady=10)
 
     def browse_file(self):
         file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx;*.xls")])
@@ -46,10 +50,8 @@ class DebtNotifierApp:
                 messagebox.showerror("Error", "The Excel file must contain 'Компания' and 'E-mail' columns.")
                 return
 
-            # Приведение значений столбца "Компания" к строковому типу
             self.df["Компания"] = self.df["Компания"].astype(str)
 
-            # Очистка предыдущих виджетов
             for widget in self.company_frame.winfo_children():
                 widget.destroy()
 
@@ -70,9 +72,24 @@ class DebtNotifierApp:
             messagebox.showerror("Error", "No companies selected.")
             return
 
+        account_email = self.account_entry.get()
+        if not account_email:
+            messagebox.showerror("Error", "Please provide an email account.")
+            return
+
         try:
             outlook = win32.Dispatch("Outlook.Application")
-            account = outlook.GetNamespace("MAPI").Accounts[0]
+            namespace = outlook.GetNamespace("MAPI")
+
+            account = None
+            for acc in namespace.Accounts:
+                if acc.SmtpAddress.lower() == account_email.lower():
+                    account = acc
+                    break
+
+            if not account:
+                messagebox.showerror("Error", f"Account with email {account_email} not found.")
+                return
 
             log_file = "email_log.txt"
             with open(log_file, "a", encoding="utf-8") as log:
@@ -92,13 +109,12 @@ class DebtNotifierApp:
                             "\n\nПросьба оплатить в ближайшее время.\n\nС уважением, ваша компания.")
 
                     mail = outlook.CreateItem(0)
-                    mail._oleobj_.Invoke(*(64209, 0, 8, 0, account))  # Привязка отправителя
+                    mail._oleobj_.Invoke(*(64209, 0, 8, 0, account))
                     mail.To = email
                     mail.Subject = "Напоминание о задолженности"
                     mail.Body = body
                     mail.Send()
 
-                    # Логирование
                     log.write(f"{datetime.now()} - Email sent to {company} ({email})\n")
 
                 messagebox.showinfo("Success", "Emails sent successfully.")
