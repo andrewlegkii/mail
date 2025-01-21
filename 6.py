@@ -21,8 +21,18 @@ class DebtNotifierApp:
 
         tk.Button(root, text="Load Companies", command=self.load_companies).grid(row=2, column=0, columnspan=3, pady=10)
 
-        self.company_frame = tk.Frame(root)
-        self.company_frame.grid(row=3, column=0, columnspan=3, pady=10)
+        # Scrollable Frame
+        self.scroll_canvas = tk.Canvas(root, width=600, height=300)
+        self.scroll_canvas.grid(row=3, column=0, columnspan=3, pady=10)
+        
+        self.scrollbar = tk.Scrollbar(root, orient="vertical", command=self.scroll_canvas.yview)
+        self.scrollbar.grid(row=3, column=3, sticky="ns")
+        
+        self.scroll_canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.inner_frame = tk.Frame(self.scroll_canvas)
+        self.scroll_canvas.create_window((0, 0), window=self.inner_frame, anchor="nw")
+
+        self.inner_frame.bind("<Configure>", lambda e: self.scroll_canvas.configure(scrollregion=self.scroll_canvas.bbox("all")))
 
         tk.Label(root, text="Choose Email Account:").grid(row=4, column=0, padx=10, pady=5, sticky="w")
         self.account_entry = tk.Entry(root, width=50)
@@ -52,13 +62,13 @@ class DebtNotifierApp:
 
             self.df["Компания"] = self.df["Компания"].astype(str)
 
-            for widget in self.company_frame.winfo_children():
+            for widget in self.inner_frame.winfo_children():
                 widget.destroy()
 
             self.check_vars = {}
             for company in sorted(self.df["Компания"].unique()):
                 var = tk.BooleanVar()
-                cb = tk.Checkbutton(self.company_frame, text=company, variable=var)
+                cb = tk.Checkbutton(self.inner_frame, text=company, variable=var)
                 cb.pack(anchor="w")
                 self.check_vars[company] = var
 
