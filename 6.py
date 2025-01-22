@@ -25,10 +25,10 @@ class EmailApp:
         self.selected_file_label = tk.Label(self.root, text="Файл не выбран")
         self.selected_file_label.grid(row=1, column=0, columnspan=2, pady=5)
 
-        # Выпадающий список для выбора листа
-        tk.Label(self.root, text="Выберите лист:").grid(row=2, column=0, sticky="e")
-        self.sheet_dropdown = tk.OptionMenu(self.root, "", [])
-        self.sheet_dropdown.grid(row=2, column=1, pady=5)
+        # Строка для ввода названия листа
+        tk.Label(self.root, text="Введите название листа:").grid(row=2, column=0, sticky="e")
+        self.sheet_name_entry = tk.Entry(self.root, width=50)
+        self.sheet_name_entry.grid(row=2, column=1, pady=5)
 
         # Кнопка для выгрузки компаний с выбранного листа
         self.load_companies_button = tk.Button(self.root, text="Выгрузить компании", command=self.load_companies)
@@ -48,24 +48,13 @@ class EmailApp:
         self.excel_file = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx")])
         if self.excel_file:
             self.selected_file_label.config(text=f"Выбран файл: {self.excel_file}")
-            self.load_sheets()
-
-    def load_sheets(self):
-        # Загружаем список листов из файла
-        try:
-            df = pd.ExcelFile(self.excel_file)
-            sheet_names = df.sheet_names
-            self.sheet_dropdown['menu'].delete(0, 'end')
-            for sheet in sheet_names:
-                self.sheet_dropdown['menu'].add_command(label=sheet, command=tk._setit(self.selected_sheet, sheet))
-            self.selected_sheet = sheet_names[0]  # Выбираем первый лист по умолчанию
-        except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось загрузить листы: {e}")
 
     def load_companies(self):
-        if not self.excel_file or not self.selected_sheet:
-            messagebox.showerror("Ошибка", "Пожалуйста, выберите файл и лист")
+        if not self.excel_file or not self.sheet_name_entry.get():
+            messagebox.showerror("Ошибка", "Пожалуйста, выберите файл и введите название листа")
             return
+
+        self.selected_sheet = self.sheet_name_entry.get()
 
         try:
             # Загружаем данные с выбранного листа
