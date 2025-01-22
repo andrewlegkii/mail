@@ -21,18 +21,8 @@ class DebtNotifierApp:
 
         tk.Button(root, text="Load Companies", command=self.load_companies).grid(row=2, column=0, columnspan=3, pady=10)
 
-        # Scrollable Frame
-        self.scroll_canvas = tk.Canvas(root, width=600, height=300)
-        self.scroll_canvas.grid(row=3, column=0, columnspan=3, pady=10)
-        
-        self.scrollbar = tk.Scrollbar(root, orient="vertical", command=self.scroll_canvas.yview)
-        self.scrollbar.grid(row=3, column=3, sticky="ns")
-        
-        self.scroll_canvas.configure(yscrollcommand=self.scrollbar.set)
-        self.inner_frame = tk.Frame(self.scroll_canvas)
-        self.scroll_canvas.create_window((0, 0), window=self.inner_frame, anchor="nw")
-
-        self.inner_frame.bind("<Configure>", lambda e: self.scroll_canvas.configure(scrollregion=self.scroll_canvas.bbox("all")))
+        self.company_frame = tk.Frame(root)
+        self.company_frame.grid(row=3, column=0, columnspan=3, pady=10)
 
         tk.Label(root, text="Choose Email Account:").grid(row=4, column=0, padx=10, pady=5, sticky="w")
         self.account_entry = tk.Entry(root, width=50)
@@ -62,13 +52,13 @@ class DebtNotifierApp:
 
             self.df["Компания"] = self.df["Компания"].astype(str)
 
-            for widget in self.inner_frame.winfo_children():
+            for widget in self.company_frame.winfo_children():
                 widget.destroy()
 
             self.check_vars = {}
             for company in sorted(self.df["Компания"].unique()):
                 var = tk.BooleanVar()
-                cb = tk.Checkbutton(self.inner_frame, text=company, variable=var)
+                cb = tk.Checkbutton(self.company_frame, text=company, variable=var)
                 cb.pack(anchor="w")
                 self.check_vars[company] = var
 
@@ -109,34 +99,23 @@ class DebtNotifierApp:
                         continue
 
                     email = company_data["E-mail"].iloc[0]
-                    
-                    # Collect CC emails from Copy1, Copy2, Copy3
-                    copy_emails = []
-                    for col in ["Copy1", "Copy2", "Copy3"]:
-                        if col in company_data.columns:
-                            valid_emails = company_data[col].dropna().tolist()  # Ignore empty cells
-                            copy_emails.extend(valid_emails)
-                    cc_emails = ", ".join(copy_emails)
+                    debts = []
+                    for _, row in company_data.iterrows():
+                        debt_info = (f"Номер претензии: {row['Номер претензии']}, Инвойс: {row['Инвойс']}, "
+                                     f"Дата претензии: {row['Дата претензии']}, Задолженность: {row['Задолженность']}")
+                        debts.append(debt_info)
 
-                    # Generate HTML table
-                    table_html = company_data.to_html(index=False, justify="center", border=1)
-
-                    # Create subject
-                    subject = f"Напоминание о задолженности по претензиям ({company})"
-
-                    body = (f"Уважаемый партнер,<br><br>У вас имеется задолженность:<br><br>" +
-                            table_html +
-                            "<br><br>Просьба оплатить в ближайшее время.<br><br>С уважением, ваша компания.")
+                    body = (f"Уважаемый партнер,\n\nУ вас имеется задолженность:\n\n" + "\n".join(debts) +
+                            "\n\nПросьба оплатить в ближайшее время.\n\nС уважением, ваша компания.")
 
                     mail = outlook.CreateItem(0)
                     mail._oleobj_.Invoke(*(64209, 0, 8, 0, account))
                     mail.To = email
-                    mail.CC = cc_emails  # Add CC addresses
-                    mail.Subject = subject  # Use dynamic subject
-                    mail.HTMLBody = body  # Use HTML body for table
+                    mail.Subject = "Напоминание о задолженности"
+                    mail.Body = body
                     mail.Send()
 
-                    log.write(f"{datetime.now()} - Email sent to {company} ({email}) with CC: {cc_emails}\n")
+                    log.write(f"{datetime.now()} - Email sent to {company} ({email})\n")
 
                 messagebox.showinfo("Success", "Emails sent successfully.")
         except Exception as e:
