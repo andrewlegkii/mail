@@ -109,16 +109,10 @@ class DebtNotifierApp:
                         continue
 
                     email = company_data["E-mail"].iloc[0]
-                    
-                    # Collect CC emails from Copy1, Copy2, Copy3
-                    copy_emails = []
-                    for col in ["Copy1", "Copy2", "Copy3"]:
-                        if col in company_data.columns:
-                            copy_emails.extend(company_data[col].dropna().tolist())
-                    cc_emails = ", ".join(copy_emails)
 
-                    # Generate HTML table
-                    table_html = company_data.to_html(index=False, justify="center", border=1)
+                    # Create a table with the desired columns
+                    table_data = company_data[["Номер претензии", "Компания", "Инвойс", "Дата претензии", "Задолженность"]]
+                    table_html = table_data.to_html(index=False, justify="center", border=1)
 
                     # Create subject
                     subject = f"Напоминание о задолженности по претензиям ({company})"
@@ -130,12 +124,11 @@ class DebtNotifierApp:
                     mail = outlook.CreateItem(0)
                     mail._oleobj_.Invoke(*(64209, 0, 8, 0, account))
                     mail.To = email
-                    mail.CC = cc_emails  # Add CC addresses
                     mail.Subject = subject  # Use dynamic subject
                     mail.HTMLBody = body  # Use HTML body for table
                     mail.Send()
 
-                    log.write(f"{datetime.now()} - Email sent to {company} ({email}) with CC: {cc_emails}\n")
+                    log.write(f"{datetime.now()} - Email sent to {company} ({email}) with Debt Table\n")
 
                 messagebox.showinfo("Success", "Emails sent successfully.")
         except Exception as e:
