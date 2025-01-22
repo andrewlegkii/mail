@@ -110,12 +110,13 @@ class DebtNotifierApp:
 
                     email = company_data["E-mail"].iloc[0]
                     
-                    # Collect CC emails from Copy1, Copy2, Copy3
+                    # Collect CC emails from Copy1, Copy2, Copy3 and remove duplicates
                     copy_emails = []
                     for col in ["Copy1", "Copy2", "Copy3"]:
                         if col in company_data.columns:
                             copy_emails.extend(company_data[col].dropna().tolist())
-                    cc_emails = ", ".join(copy_emails)
+                    # Remove duplicates using set
+                    cc_emails = ", ".join(set(copy_emails))
 
                     # Generate HTML table
                     table_html = company_data.to_html(index=False, justify="center", border=1)
@@ -137,7 +138,7 @@ class DebtNotifierApp:
 
                     log.write(f"{datetime.now()} - Email sent to {company} ({email}) with CC: {cc_emails}\n")
 
-                messagebox.showinfo("Success", "Emails sent successfully.")
+            messagebox.showinfo("Success", "Emails sent successfully.")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to send emails: {e}")
 
