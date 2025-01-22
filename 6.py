@@ -1,158 +1,173 @@
-import tkinter as tk
-from tkinter import filedialog, messagebox
 import pandas as pd
 import win32com.client as win32
-from datetime import datetime
+import tkinter as tk
+from tkinter import filedialog, messagebox
 
-class DebtNotifierApp:
+
+class EmailApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Debt Notifier App")
+        self.root.title("Email Sender")
 
-        # UI Elements
-        tk.Label(root, text="Excel File Path:").grid(row=0, column=0, padx=10, pady=5, sticky="w")
-        self.file_entry = tk.Entry(root, width=50)
-        self.file_entry.grid(row=0, column=1, padx=10, pady=5)
-        tk.Button(root, text="Browse", command=self.browse_file).grid(row=0, column=2, padx=10, pady=5)
+        self.excel_file = ""
+        self.selected_sheet = ""
+        self.companies = []
 
-        tk.Label(root, text="Sheet Name:").grid(row=1, column=0, padx=10, pady=5, sticky="w")
-        self.sheet_entry = tk.Entry(root, width=20)
-        self.sheet_entry.grid(row=1, column=1, padx=10, pady=5, sticky="w")
+        self.setup_ui()
 
-        tk.Button(root, text="Load Companies", command=self.load_companies).grid(row=2, column=0, columnspan=3, pady=10)
+    def setup_ui(self):
+        # Поле для выбора Excel файла
+        tk.Label(self.root, text="Выберите файл:").grid(row=0, column=0, sticky="e")
+        self.select_file_button = tk.Button(self.root, text="Выбрать файл", command=self.select_file)
+        self.select_file_button.grid(row=0, column=1, pady=5)
 
-        # Scrollable Frame
-        self.scroll_canvas = tk.Canvas(root, width=600, height=300)
-        self.scroll_canvas.grid(row=3, column=0, columnspan=3, pady=10)
-        
-        self.scrollbar = tk.Scrollbar(root, orient="vertical", command=self.scroll_canvas.yview)
-        self.scrollbar.grid(row=3, column=3, sticky="ns")
-        
-        self.scroll_canvas.configure(yscrollcommand=self.scrollbar.set)
-        self.inner_frame = tk.Frame(self.scroll_canvas)
-        self.scroll_canvas.create_window((0, 0), window=self.inner_frame, anchor="nw")
+        # Место для отображения выбранного файла
+        self.selected_file_label = tk.Label(self.root, text="Файл не выбран")
+        self.selected_file_label.grid(row=1, column=0, columnspan=2, pady=5)
 
-        self.inner_frame.bind("<Configure>", lambda e: self.scroll_canvas.configure(scrollregion=self.scroll_canvas.bbox("all")))
+        # Выпадающий список для выбора листа
+        tk.Label(self.root, text="Выберите лист:").grid(row=2, column=0, sticky="e")
+        self.sheet_dropdown = tk.OptionMenu(self.root, "", [])
+        self.sheet_dropdown.grid(row=2, column=1, pady=5)
 
-        tk.Label(root, text="Choose Email Account:").grid(row=4, column=0, padx=10, pady=5, sticky="w")
-        self.account_entry = tk.Entry(root, width=50)
-        self.account_entry.grid(row=4, column=1, padx=10, pady=5, sticky="w")
+        # Кнопка для выгрузки компаний с выбранного листа
+        self.load_companies_button = tk.Button(self.root, text="Выгрузить компании", command=self.load_companies)
+        self.load_companies_button.grid(row=3, column=0, columnspan=2, pady=5)
 
-        tk.Button(root, text="Send Emails", command=self.send_emails).grid(row=5, column=0, columnspan=3, pady=10)
+        # Строка для ввода почты отправителя
+        tk.Label(self.root, text="Почта отправителя:").grid(row=4, column=0, sticky="e")
+        self.sender_email_entry = tk.Entry(self.root, width=50)
+        self.sender_email_entry.grid(row=4, column=1, pady=5)
 
-    def browse_file(self):
-        file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx;*.xls")])
-        if file_path:
-            self.file_entry.delete(0, tk.END)
-            self.file_entry.insert(0, file_path)
+        # Кнопка отправки писем
+        self.send_button = tk.Button(self.root, text="Отправить письма", command=self.send_emails)
+        self.send_button.grid(row=5, column=0, columnspan=2, pady=5)
+
+    def select_file(self):
+        # Окно выбора файла
+        self.excel_file = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx")])
+        if self.excel_file:
+            self.selected_file_label.config(text=f"Выбран файл: {self.excel_file}")
+            self.load_sheets()
+
+    def load_sheets(self):
+        # Загружаем список листов из файла
+        try:
+            df = pd.ExcelFile(self.excel_file)
+            sheet_names = df.sheet_names
+            self.sheet_dropdown['menu'].delete(0, 'end')
+            for sheet in sheet_names:
+                self.sheet_dropdown['menu'].add_command(label=sheet, command=tk._setit(self.selected_sheet, sheet))
+            self.selected_sheet = sheet_names[0]  # Выбираем первый лист по умолчанию
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось загрузить листы: {e}")
 
     def load_companies(self):
-        file_path = self.file_entry.get()
-        sheet_name = self.sheet_entry.get()
-
-        if not file_path or not sheet_name:
-            messagebox.showerror("Error", "Please provide both file path and sheet name.")
+        if not self.excel_file or not self.selected_sheet:
+            messagebox.showerror("Ошибка", "Пожалуйста, выберите файл и лист")
             return
 
         try:
-            self.df = pd.read_excel(file_path, sheet_name=sheet_name)
-
-            # Вывод столбцов и первых строк для отладки
-            print("Columns in the Excel file:", self.df.columns)
-            print("First few rows of the data:", self.df.head())
-
-            # Ignore rows with empty 'Компания' or 'E-mail' columns
-            self.df = self.df.dropna(subset=["Компания", "E-mail"])
-
-            if "Компания" not in self.df.columns or "E-mail" not in self.df.columns:
-                messagebox.showerror("Error", "The Excel file must contain 'Компания' and 'E-mail' columns.")
+            # Загружаем данные с выбранного листа
+            df = pd.read_excel(self.excel_file, sheet_name=self.selected_sheet)
+            if "Компания" not in df.columns:
+                messagebox.showerror("Ошибка", "В выбранном листе нет столбца 'Компания'")
                 return
 
-            self.df["Компания"] = self.df["Компания"].astype(str)
+            self.companies = df["Компания"].unique()
 
-            for widget in self.inner_frame.winfo_children():
-                widget.destroy()
+            # Отображаем компании
+            self.companies_label = tk.Label(self.root, text=f"Компании: {', '.join(self.companies)}")
+            self.companies_label.grid(row=3, column=0, columnspan=2, pady=5)
 
-            self.check_vars = {}
-            for company in sorted(self.df["Компания"].unique()):
-                var = tk.BooleanVar()
-                cb = tk.Checkbutton(self.inner_frame, text=company, variable=var)
-                cb.pack(anchor="w")
-                self.check_vars[company] = var
-
-            messagebox.showinfo("Success", "Companies loaded successfully.")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to load companies: {e}")
+            messagebox.showerror("Ошибка", f"Ошибка при выгрузке компаний: {e}")
 
     def send_emails(self):
-        selected_companies = [company for company, var in self.check_vars.items() if var.get()]
-        if not selected_companies:
-            messagebox.showerror("Error", "No companies selected.")
+        sender_email = self.sender_email_entry.get()
+        if not sender_email:
+            messagebox.showerror("Ошибка", "Пожалуйста, введите почту отправителя")
             return
 
-        account_email = self.account_entry.get()
-        if not account_email:
-            messagebox.showerror("Error", "Please provide an email account.")
+        if not self.companies:
+            messagebox.showerror("Ошибка", "Не выбраны компании")
             return
 
         try:
-            outlook = win32.Dispatch("Outlook.Application")
-            namespace = outlook.GetNamespace("MAPI")
-
-            account = None
-            for acc in namespace.Accounts:
-                if acc.SmtpAddress.lower() == account_email.lower():
-                    account = acc
-                    break
-
-            if not account:
-                messagebox.showerror("Error", f"Account with email {account_email} not found.")
-                return
-
-            log_file = "email_log.txt"
-            with open(log_file, "a", encoding="utf-8") as log:
-                for company in selected_companies:
-                    company_data = self.df[self.df["Компания"] == company]
-                    if company_data.empty:
-                        continue
-
-                    email = company_data["E-mail"].iloc[0]
-                    if pd.isna(email):  # Skip empty email addresses
-                        continue
-
-                    # Collect CC emails from Copy1, Copy2, Copy3
-                    copy_emails = []
-                    for col in ["Copy1", "Copy2", "Copy3"]:
-                        if col in company_data.columns:
-                            valid_emails = company_data[col].dropna().tolist()  # Ignore empty cells
-                            copy_emails.extend(valid_emails)
-                    cc_emails = ", ".join(copy_emails)
-
-                    # Generate HTML table
-                    table_html = company_data.to_html(index=False, justify="center", border=1)
-
-                    # Create subject
-                    subject = f"Напоминание о задолженности по претензиям ({company})"
-
-                    body = (f"Уважаемый партнер,<br><br>У вас имеется задолженность:<br><br>" +
-                            table_html +
-                            "<br><br>Просьба оплатить в ближайшее время.<br><br>С уважением, ваша компания.")
-
-                    mail = outlook.CreateItem(0)
-                    mail._oleobj_.Invoke(*(64209, 0, 8, 0, account))
-                    mail.To = email
-                    mail.CC = cc_emails  # Add CC addresses
-                    mail.Subject = subject  # Use dynamic subject
-                    mail.HTMLBody = body  # Use HTML body for table
-                    mail.Send()
-
-                    log.write(f"{datetime.now()} - Email sent to {company} ({email}) with CC: {cc_emails}\n")
-
-                messagebox.showinfo("Success", "Emails sent successfully.")
+            send_emails_with_cc(self.excel_file, self.selected_sheet, sender_email, self.companies)
+            messagebox.showinfo("Успех", "Письма успешно отправлены")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to send emails: {e}")
+            messagebox.showerror("Ошибка", f"Ошибка при отправке писем: {e}")
+
+
+def send_emails_with_cc(excel_file, sheet_name, sender_email, selected_companies):
+    # Загружаем данные из выбранного листа
+    df = pd.read_excel(excel_file, sheet_name=sheet_name)
+
+    # Фильтруем данные по выбранным компаниям
+    df_filtered = df[df["Компания"].isin(selected_companies)]
+
+    # Группируем по email
+    grouped = df_filtered.groupby("E-mail")
+
+    outlook = win32.Dispatch("outlook.application")
+    namespace = outlook.GetNamespace("MAPI")
+
+    account = None
+    for acc in namespace.Accounts:
+        if acc.SmtpAddress.lower() == sender_email.lower():
+            account = acc
+            break
+
+    if not account:
+        raise ValueError(f"Учетная запись {sender_email} не найдена в Outlook.")
+
+    for email, group in grouped:
+        company = group["Компания"].iloc[0]
+        debt_details = ""
+
+        for _, row in group.iterrows():
+            claim_number = row["Номер претензии"]
+            invoice = row["Инвойс"]
+            transport_date = row["Дата претензии"]
+            debt = row["Задолженность"]
+
+            debt_details += (
+                f"- Номер претензии: {claim_number}, Инвойс: {invoice}, "
+                f"Дата претензии: {transport_date.strftime('%d.%m.%Y') if pd.notnull(transport_date) else 'не указана'}, "
+                f"Сумма: {debt} руб.\n"
+            )
+
+        cc_list = group[["Copy1", "Copy2", "Copy3"]].values.flatten()
+        cc_list = [cc for cc in cc_list if pd.notnull(cc)]
+        cc_addresses = "; ".join(cc_list)
+
+        subject = f"Напоминание о задолженности компании {company}"
+        body = f"""
+        Уважаемые коллеги,
+
+        Напоминаем, что у компании {company} есть задолженность:
+        {debt_details}
+
+        Просим произвести оплату в ближайшее время.
+
+        С уважением,
+        Ваша компания
+        """
+
+        try:
+            mail = outlook.CreateItem(0)
+            mail._oleobj_.Invoke(*(64209, 0, 8, 0, account))  # Привязка отправителя
+            mail.To = email
+            mail.CC = cc_addresses
+            mail.Subject = subject
+            mail.Body = body
+            mail.Send()
+        except Exception as e:
+            print(f"Ошибка при отправке сообщения для {company} ({email}): {e}")
+
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = DebtNotifierApp(root)
+    app = EmailApp(root)
     root.mainloop()
