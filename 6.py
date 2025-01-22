@@ -114,7 +114,8 @@ class DebtNotifierApp:
                     copy_emails = []
                     for col in ["Copy1", "Copy2", "Copy3"]:
                         if col in company_data.columns:
-                            copy_emails.extend(company_data[col].dropna().tolist())
+                            valid_emails = company_data[col].dropna().tolist()  # Ignore empty cells
+                            copy_emails.extend(valid_emails)
                     cc_emails = ", ".join(copy_emails)
 
                     # Generate HTML table
