@@ -1,183 +1,147 @@
+import tkinter as tk
+from tkinter import filedialog, messagebox
 import pandas as pd
 import win32com.client as win32
-import logging
-from tkinter import filedialog, Tk, Entry, Button, Label, messagebox
+from datetime import datetime
 
-
-def setup_logging():
-    # Настройка логирования
-    logging.basicConfig(
-        filename="email_send_log.txt",
-        level=logging.INFO,
-        format="%(asctime)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-
-
-def send_emails_with_cc_and_logging(
-    excel_file, sheet_name, sender_email, send_to_all=True, company_number=None
-):
-    # Чтение данных из Excel
-    df = pd.read_excel(excel_file, sheet_name=sheet_name)
-
-    # Проверка наличия необходимых столбцов
-    required_columns = [
-        "Номер",
-        "Номер претензии",
-        "Компания",
-        "Инвойс",
-        "Дата претензии",
-        "Задолженность",
-        "E-mail",
-        "Copy1",
-        "Copy2",
-        "Copy3",
-    ]
-    if not all(col in df.columns for col in required_columns):
-        raise ValueError(f"В таблице должны быть столбцы: {', '.join(required_columns)}")
-
-    # Фильтрация данных: всем или конкретной компании
-    if not send_to_all:
-        if company_number is None:
-            raise ValueError("Для отправки конкретной компании укажите её номер.")
-        company_name = df.loc[df["Номер"] == company_number, "Компания"].iloc[0]
-        df = df[df["Компания"] == company_name]
-
-    # Группировка данных по e-mail
-    grouped = df.groupby("E-mail")
-
-    # Настройка Outlook
-    outlook = win32.Dispatch("outlook.application")
-    namespace = outlook.GetNamespace("MAPI")
-
-    # Поиск учетной записи отправителя
-    account = None
-    for acc in namespace.Accounts:
-        if acc.SmtpAddress.lower() == sender_email.lower():
-            account = acc
-            break
-
-    if not account:
-        raise ValueError(f"Учетная запись {sender_email} не найдена в Outlook.")
-
-    for email, group in grouped:
-        company = group["Компания"].iloc[0]
-        debt_details = ""
-
-        # Сбор деталей задолженностей
-        for _, row in group.iterrows():
-            claim_number = row["Номер претензии"]
-            invoice = row["Инвойс"]
-            transport_date = row["Дата претензии"]
-            debt = row["Задолженность"]
-
-            debt_details += (
-                f"- Номер претензии: {claim_number}, Инвойс: {invoice}, "
-                f"Дата претензии: {transport_date.strftime('%d.%m.%Y') if pd.notnull(transport_date) else 'не указана'}, "
-                f"Сумма: {debt} руб.\n"
-            )
-
-        # Сбор адресов для копии
-        cc_list = group[["Copy1", "Copy2", "Copy3"]].values.flatten()
-        cc_list = [cc for cc in cc_list if pd.notnull(cc)]
-        cc_addresses = "; ".join(cc_list)
-
-        # Генерация текста сообщения
-        subject = f"Напоминание о задолженности компании {company}"
-        body = f"""
-        Уважаемые коллеги,
-
-        Напоминаем, что у компании {company} есть задолженность:
-        {debt_details}
-
-        Просим произвести оплату в ближайшее время.
-
-        С уважением,
-        Ваша компания
-        """
-
-        # Создание и отправка письма
-        try:
-            mail = outlook.CreateItem(0)
-            mail._oleobj_.Invoke(*(64209, 0, 8, 0, account))  # Привязка отправителя
-            mail.To = email
-            mail.CC = cc_addresses
-            mail.Subject = subject
-            mail.Body = body
-            mail.Send()
-
-            # Логирование успешной отправки
-            logging.info(f"Сообщение отправлено: Компания: {company}, E-mail: {email}, Копия: {cc_addresses}")
-            print(f"Сообщение отправлено: {company} ({email}), Копия: {cc_addresses}")
-        except Exception as e:
-            logging.error(f"Ошибка при отправке сообщения для {company} ({email}): {e}")
-            print(f"Ошибка при отправке сообщения для {company} ({email}): {e}")
-
-
-class EmailSenderApp:
+class DebtNotifierApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Отправка сообщений по компаниям")
+        self.root.title("Debt Notifier App")
 
-        # Инициализация переменных
-        self.excel_file = None
-        self.sheet_name = None
-        self.sender_email = None
+        # UI Elements
+        tk.Label(root, text="Excel File Path:").grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        self.file_entry = tk.Entry(root, width=50)
+        self.file_entry.grid(row=0, column=1, padx=10, pady=5)
+        tk.Button(root, text="Browse", command=self.browse_file).grid(row=0, column=2, padx=10, pady=5)
 
-        # Элементы интерфейса
-        self.create_widgets()
+        tk.Label(root, text="Sheet Name:").grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        self.sheet_entry = tk.Entry(root, width=20)
+        self.sheet_entry.grid(row=1, column=1, padx=10, pady=5, sticky="w")
 
-    def create_widgets(self):
-        # Кнопка для выбора файла
-        self.select_file_button = Button(self.root, text="Выбрать файл", command=self.select_file)
-        self.select_file_button.grid(row=0, column=0, padx=10, pady=10)
+        tk.Button(root, text="Load Companies", command=self.load_companies).grid(row=2, column=0, columnspan=3, pady=10)
 
-        # Строка для ввода имени листа
-        self.sheet_name_label = Label(self.root, text="Введите название листа:")
-        self.sheet_name_label.grid(row=1, column=0, padx=10, pady=10)
-        self.sheet_name_entry = Entry(self.root)
-        self.sheet_name_entry.grid(row=1, column=1, padx=10, pady=10)
+        # Scrollable Frame
+        self.scroll_canvas = tk.Canvas(root, width=600, height=300)
+        self.scroll_canvas.grid(row=3, column=0, columnspan=3, pady=10)
+        
+        self.scrollbar = tk.Scrollbar(root, orient="vertical", command=self.scroll_canvas.yview)
+        self.scrollbar.grid(row=3, column=3, sticky="ns")
+        
+        self.scroll_canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.inner_frame = tk.Frame(self.scroll_canvas)
+        self.scroll_canvas.create_window((0, 0), window=self.inner_frame, anchor="nw")
 
-        # Строка для ввода почты отправителя
-        self.sender_email_label = Label(self.root, text="Введите почту отправителя:")
-        self.sender_email_label.grid(row=2, column=0, padx=10, pady=10)
-        self.sender_email_entry = Entry(self.root)
-        self.sender_email_entry.grid(row=2, column=1, padx=10, pady=10)
+        self.inner_frame.bind("<Configure>", lambda e: self.scroll_canvas.configure(scrollregion=self.scroll_canvas.bbox("all")))
 
-        # Кнопка для отправки писем
-        self.send_button = Button(self.root, text="Отправить сообщения", command=self.send_emails)
-        self.send_button.grid(row=3, column=0, columnspan=2, pady=10)
+        tk.Label(root, text="Choose Email Account:").grid(row=4, column=0, padx=10, pady=5, sticky="w")
+        self.account_entry = tk.Entry(root, width=50)
+        self.account_entry.grid(row=4, column=1, padx=10, pady=5, sticky="w")
 
-    def select_file(self):
-        """Открытие диалогового окна для выбора файла"""
-        self.excel_file = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx;*.xls")])
-        if self.excel_file:
-            messagebox.showinfo("Информация", f"Выбран файл: {self.excel_file}")
+        tk.Button(root, text="Send Emails", command=self.send_emails).grid(row=5, column=0, columnspan=3, pady=10)
 
-    def send_emails(self):
-        """Отправка сообщений с выбором данных"""
-        self.sheet_name = self.sheet_name_entry.get()
-        self.sender_email = self.sender_email_entry.get()
+    def browse_file(self):
+        file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx;*.xls")])
+        if file_path:
+            self.file_entry.delete(0, tk.END)
+            self.file_entry.insert(0, file_path)
 
-        if not self.excel_file or not self.sheet_name or not self.sender_email:
-            messagebox.showerror("Ошибка", "Пожалуйста, выберите файл, введите название листа и почту отправителя")
+    def load_companies(self):
+        file_path = self.file_entry.get()
+        sheet_name = self.sheet_entry.get()
+
+        if not file_path or not sheet_name:
+            messagebox.showerror("Error", "Please provide both file path and sheet name.")
             return
 
         try:
-            # Настройка логирования
-            setup_logging()
+            self.df = pd.read_excel(file_path, sheet_name=sheet_name)
+            if "Компания" not in self.df.columns or "E-mail" not in self.df.columns:
+                messagebox.showerror("Error", "The Excel file must contain 'Компания' and 'E-mail' columns.")
+                return
 
-            # Вызов функции отправки писем с логированием
-            send_emails_with_cc_and_logging(
-                self.excel_file, self.sheet_name, self.sender_email, send_to_all=True
-            )
-            messagebox.showinfo("Успех", "Сообщения успешно отправлены!")
+            self.df["Компания"] = self.df["Компания"].astype(str)
 
+            for widget in self.inner_frame.winfo_children():
+                widget.destroy()
+
+            self.check_vars = {}
+            for company in sorted(self.df["Компания"].unique()):
+                var = tk.BooleanVar()
+                cb = tk.Checkbutton(self.inner_frame, text=company, variable=var)
+                cb.pack(anchor="w")
+                self.check_vars[company] = var
+
+            messagebox.showinfo("Success", "Companies loaded successfully.")
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Ошибка при отправке сообщений: {e}")
+            messagebox.showerror("Error", f"Failed to load companies: {e}")
 
+    def send_emails(self):
+        selected_companies = [company for company, var in self.check_vars.items() if var.get()]
+        if not selected_companies:
+            messagebox.showerror("Error", "No companies selected.")
+            return
+
+        account_email = self.account_entry.get()
+        if not account_email:
+            messagebox.showerror("Error", "Please provide an email account.")
+            return
+
+        try:
+            outlook = win32.Dispatch("Outlook.Application")
+            namespace = outlook.GetNamespace("MAPI")
+
+            account = None
+            for acc in namespace.Accounts:
+                if acc.SmtpAddress.lower() == account_email.lower():
+                    account = acc
+                    break
+
+            if not account:
+                messagebox.showerror("Error", f"Account with email {account_email} not found.")
+                return
+
+            log_file = "email_log.txt"
+            with open(log_file, "a", encoding="utf-8") as log:
+                for company in selected_companies:
+                    company_data = self.df[self.df["Компания"] == company]
+                    if company_data.empty:
+                        continue
+
+                    email = company_data["E-mail"].iloc[0]
+                    
+                    # Collect CC emails from Copy1, Copy2, Copy3
+                    copy_emails = []
+                    for col in ["Copy1", "Copy2", "Copy3"]:
+                        if col in company_data.columns:
+                            copy_emails.extend(company_data[col].dropna().tolist())
+                    cc_emails = ", ".join(copy_emails)
+
+                    # Generate HTML table
+                    table_html = company_data.to_html(index=False, justify="center", border=1)
+
+                    # Create subject
+                    subject = f"Напоминание о задолженности по претензиям ({company})"
+
+                    body = (f"Уважаемый партнер,<br><br>У вас имеется задолженность:<br><br>" +
+                            table_html +
+                            "<br><br>Просьба оплатить в ближайшее время.<br><br>С уважением, ваша компания.")
+
+                    mail = outlook.CreateItem(0)
+                    mail._oleobj_.Invoke(*(64209, 0, 8, 0, account))
+                    mail.To = email
+                    mail.CC = cc_emails  # Add CC addresses
+                    mail.Subject = subject  # Use dynamic subject
+                    mail.HTMLBody = body  # Use HTML body for table
+                    mail.Send()
+
+                    log.write(f"{datetime.now()} - Email sent to {company} ({email}) with CC: {cc_emails}\n")
+
+                messagebox.showinfo("Success", "Emails sent successfully.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to send emails: {e}")
 
 if __name__ == "__main__":
-    root = Tk()
-    app = EmailSenderApp(root)
+    root = tk.Tk()
+    app = DebtNotifierApp(root)
     root.mainloop()
