@@ -116,13 +116,15 @@ class DebtNotifierApp:
                     if pd.isna(email):  # Skip empty email addresses
                         continue
 
-                    # Collect CC emails from Copy1, Copy2, Copy3
+                    # Collect CC emails from Copy1, Copy2, Copy3 (ignore empty values)
                     copy_emails = []
                     for col in ["Copy1", "Copy2", "Copy3"]:
                         if col in company_data.columns:
                             valid_emails = company_data[col].dropna().tolist()  # Ignore empty cells
                             copy_emails.extend(valid_emails)
-                    cc_emails = ", ".join(copy_emails)
+
+                    # Filter out any empty CC addresses
+                    cc_emails = ", ".join([email for email in copy_emails if email])
 
                     # Generate HTML table
                     table_html = company_data.to_html(index=False, justify="center", border=1)
@@ -137,7 +139,7 @@ class DebtNotifierApp:
                     mail = outlook.CreateItem(0)
                     mail._oleobj_.Invoke(*(64209, 0, 8, 0, account))
                     mail.To = email
-                    mail.CC = cc_emails  # Add CC addresses
+                    mail.CC = cc_emails  # Add CC addresses (if any)
                     mail.Subject = subject  # Use dynamic subject
                     mail.HTMLBody = body  # Use HTML body for table
                     mail.Send()
