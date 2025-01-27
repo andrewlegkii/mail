@@ -110,22 +110,20 @@ class DebtNotifierApp:
 
                     email = company_data["E-mail"].iloc[0]
 
-                    # Create a table with the desired columns
                     table_data = company_data[["Номер претензии", "Компания", "Инвойс", "Дата претензии", "Задолженность"]]
                     table_html = table_data.to_html(index=False, justify="center", border=1)
 
-                    # Create subject
                     subject = f"Напоминание о задолженности по претензиям ({company})"
 
                     body = (f"Уважаемый партнер,<br><br>У вас имеется задолженность:<br><br>" +
                             table_html +
-                            "<br><br>Просьба оплатить в ближайшее время.<br><br>С уважением, ваша компания.")
+                            "<br><br>Просьба оплатить в ближайшее время.<br><br>С уважением, Nestle.")
 
                     mail = outlook.CreateItem(0)
                     mail._oleobj_.Invoke(*(64209, 0, 8, 0, account))
                     mail.To = email
-                    mail.Subject = subject  # Use dynamic subject
-                    mail.HTMLBody = body  # Use HTML body for table
+                    mail.Subject = subject
+                    mail.HTMLBody = body
                     mail.Send()
 
                     log.write(f"{datetime.now()} - Email sent to {company} ({email}) with Debt Table\n")
