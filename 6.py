@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox
 import pandas as pd
 import win32com.client as win32
 from datetime import datetime
@@ -8,6 +8,7 @@ class DebtNotifierApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Debt Notifier App")
+        self.sort_ascending = True  # Флаг сортировки по алфавиту
 
         # Элементы интерфейса
         tk.Label(root, text="Excel File Path:").grid(row=0, column=0, padx=10, pady=5, sticky="w")
@@ -19,7 +20,13 @@ class DebtNotifierApp:
         self.sheet_entry = tk.Entry(root, width=20)
         self.sheet_entry.grid(row=1, column=1, padx=10, pady=5, sticky="w")
 
-        tk.Button(root, text="Load Companies", command=self.load_companies).grid(row=2, column=0, columnspan=3, pady=10)
+        # Кнопки управления
+        buttons_frame = tk.Frame(root)
+        buttons_frame.grid(row=2, column=0, columnspan=3, pady=10)
+        
+        tk.Button(buttons_frame, text="Load Companies", command=self.load_companies).pack(side="left", padx=5)
+        self.sort_btn = tk.Button(buttons_frame, text="Sort A-Z", command=self.toggle_sort)
+        self.sort_btn.pack(side="left", padx=5)
 
         # Прокручиваемый фрейм
         self.scroll_canvas = tk.Canvas(root, width=600, height=300)
@@ -31,14 +38,28 @@ class DebtNotifierApp:
         self.scroll_canvas.configure(yscrollcommand=self.scrollbar.set)
         self.inner_frame = tk.Frame(self.scroll_canvas)
         self.scroll_canvas.create_window((0, 0), window=self.inner_frame, anchor="nw")
-
         self.inner_frame.bind("<Configure>", lambda e: self.scroll_canvas.configure(scrollregion=self.scroll_canvas.bbox("all")))
 
-        tk.Label(root, text="Choose Email Account:").grid(row=4, column=0, padx=10, pady=5, sticky="w")
-        self.account_entry = tk.Entry(root, width=50)
-        self.account_entry.grid(row=4, column=1, padx=10, pady=5, sticky="w")
+        # Выбор аккаунта
+        acc_frame = tk.Frame(root)
+        acc_frame.grid(row=4, column=0, columnspan=3, sticky="w")
+        
+        tk.Label(acc_frame, text="Choose Email Account:").pack(side="left", padx=10, pady=5)
+        self.account_combo = ttk.Combobox(acc_frame, width=40)
+        self.account_combo.pack(side="left", padx=5)
+        tk.Button(acc_frame, text="Load Accounts", command=self.load_accounts).pack(side="left", padx=5)
 
+        # Кнопка отправки
         tk.Button(root, text="Send Emails", command=self.send_emails).grid(row=5, column=0, columnspan=3, pady=10)
+
+        # Загружаем аккаунты при старте
+        self.load_accounts()
+
+    def toggle_sort(self):
+        """Переключение порядка сортировки"""
+        self.sort_ascending = not self.sort_ascending
+        self.sort_btn.config(text="Sort Z-A" if self.sort_ascending else "Sort A-Z")
+        self.load_companies()
 
     def browse_file(self):
         file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx;*.xls")])
@@ -66,8 +87,10 @@ class DebtNotifierApp:
             for widget in self.inner_frame.winfo_children():
                 widget.destroy()
 
+            companies = sorted(self.df["Компания"].unique(), reverse=not self.sort_ascending)
+            
             self.check_vars = {}
-            for company in sorted(self.df["Компания"].unique()):
+            for company in companies:
                 var = tk.BooleanVar()
                 cb = tk.Checkbutton(self.inner_frame, text=company, variable=var)
                 cb.pack(anchor="w")
@@ -77,15 +100,27 @@ class DebtNotifierApp:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load companies: {e}")
 
+    def load_accounts(self):
+        """Загрузка доступных почтовых аккаунтов из Outlook"""
+        try:
+            outlook = win32.Dispatch("Outlook.Application")
+            namespace = outlook.GetNamespace("MAPI")
+            accounts = [acc.SmtpAddress for acc in namespace.Accounts if acc.SmtpAddress]
+            self.account_combo["values"] = accounts
+            if accounts:
+                self.account_combo.set(accounts[0])
+        except Exception as e:
+            messagebox.showwarning("Warning", f"Could not load email accounts: {e}")
+
     def send_emails(self):
         selected_companies = [company for company, var in self.check_vars.items() if var.get()]
         if not selected_companies:
             messagebox.showerror("Error", "No companies selected.")
             return
 
-        account_email = self.account_entry.get()
+        account_email = self.account_combo.get()
         if not account_email:
-            messagebox.showerror("Error", "Please provide an email account.")
+            messagebox.showerror("Error", "Please select an email account.")
             return
 
         try:
@@ -111,7 +146,6 @@ class DebtNotifierApp:
 
                     email = company_data["E-mail"].iloc[0]
 
-                    # Собираем адреса для копии
                     cc_emails = []
                     for col in ["Copy1", "Copy2", "Copy3"]:
                         if col in company_data.columns and pd.notna(company_data[col].iloc[0]):
