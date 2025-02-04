@@ -7,3 +7,4 @@
 2025-02-04 13:58:26.485703 - Email sent to ООО "ОБОЗ ДИДЖИТАЛ" (skoppss@yandex.ru) with Debt Table
 2025-02-04 14:05:31.268728 - Email sent to ООО "ОБОЗ ДИДЖИТАЛ" (skoppss@yandex.ru) with Debt Table
 CC: legkiy.a@inbox.eu; tatyana.gorlevich@nestle.ru
+2025-02-04 14:32:43.191612 - Sent to skoppss@yandex.ru
